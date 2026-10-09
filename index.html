@@ -446,7 +446,64 @@
         function setupDrag(el) { let isDragging = false, offsetX, offsetY; const dragHandle = el.querySelector('.widget-drag-handle'); dragHandle.addEventListener('pointerdown', (e) => { if (e.target.closest('button') || e.target.closest('.controls')) return; isDragging = true; el.style.zIndex = ++highestZIndex; document.querySelectorAll('.widget').forEach(w => w.classList.remove('active')); el.classList.add('active', 'dragging'); autoScaleText(el); const rect = el.getBoundingClientRect(); offsetX = e.clientX - rect.left; offsetY = e.clientY - rect.top; try { dragHandle.setPointerCapture(e.pointerId); } catch (err) {} e.preventDefault(); }); dragHandle.addEventListener('pointermove', (e) => { if (!isDragging) return; const workspaceRect = workspace.getBoundingClientRect(); let newX = e.clientX - workspaceRect.left - offsetX; let newY = e.clientY - workspaceRect.top - offsetY; newX = Math.max(-20, Math.min(newX, workspaceRect.width - el.offsetWidth + 20)); newY = Math.max(-20, Math.min(newY, workspaceRect.height - el.offsetHeight + 20)); el.style.left = `${newX}px`; el.style.top = `${newY}px`; const binRect = bin.getBoundingClientRect(); const elRect = el.getBoundingClientRect(); if (elRect.left < binRect.right && elRect.right > binRect.left && elRect.top < binRect.bottom && elRect.bottom > binRect.top) bin.classList.add('drag-over'); else bin.classList.remove('drag-over'); }); dragHandle.addEventListener('pointerup', (e) => { if (!isDragging) return; isDragging = false; el.classList.remove('dragging'); try { dragHandle.releasePointerCapture(e.pointerId); } catch (err) {} if (bin.classList.contains('drag-over')) { el.remove(); bin.classList.remove('drag-over'); } saveToLocal(); }); dragHandle.addEventListener('pointercancel', () => { isDragging = false; el.classList.remove('dragging'); bin.classList.remove('drag-over'); }); }
         function setupResize(el) { const resizer = el.querySelector('.resizer'); let isResizing = false, startX, startY, startWidth, startHeight; resizer.addEventListener('pointerdown', (e) => { isResizing = true; startX = e.clientX; startY = e.clientY; startWidth = el.offsetWidth; startHeight = el.offsetHeight; el.style.zIndex = ++highestZIndex; try { resizer.setPointerCapture(e.pointerId); } catch (err) {} e.preventDefault(); e.stopPropagation(); }); resizer.addEventListener('pointermove', (e) => { if (!isResizing) return; const dx = e.clientX - startX; const dy = e.clientY - startY; const workspaceRect = workspace.getBoundingClientRect(); const maxWidth = workspaceRect.width - el.offsetLeft + 20; const maxHeight = workspaceRect.height - el.offsetTop + 20; el.style.width = `${Math.max(160, Math.min(startWidth + dx, maxWidth))}px`; el.style.height = `${Math.max(140, Math.min(startHeight + dy, maxHeight))}px`; autoScaleText(el); }); resizer.addEventListener('pointerup', (e) => { if (!isResizing) return; isResizing = false; try { resizer.releasePointerCapture(e.pointerId); } catch (err) {} saveToLocal(); }); resizer.addEventListener('pointercancel', () => { isResizing = false; }); }
         function setupWidgetControls(el) { const content = el.querySelector('.widget-content'); const picker = el.querySelector('.color-picker'); el.querySelector('.controls').addEventListener('click', (e) => { const btn = e.target.closest('[data-action]'); if (!btn) return; e.preventDefault(); const action = btn.dataset.action; if (action === 'bold') document.execCommand('bold'); if (action === 'italic') document.execCommand('italic'); if (action === 'underline') document.execCommand('underline'); if (action === 'font-minus') changeFontSize(el, -2); if (action === 'font-plus') changeFontSize(el, 2); if (action === 'toggle-mode') toggleMode(el, btn); if (action === 'delete') el.remove(); saveToLocal(); }); const doneBtn = el.querySelector('.done-btn'); doneBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); el.classList.toggle('done'); saveToLocal(); }); el.querySelectorAll('.controls button').forEach(btn => btn.addEventListener('pointerdown', (e) => e.preventDefault())); doneBtn.addEventListener('pointerdown', (e) => e.preventDefault()); picker.addEventListener('input', (e) => { applyColor(el, e.target.value); saveToLocal(); }); }
-        function changeFontSize(widget, change) { const content = widget.querySelector('.widget-content'); let multiplier = parseFloat(widget.dataset.userFontMultiplier) || 1; multiplier += change > 0 ? 0.15 : -0.15; multiplier = Math.max(0.4, Math.min(3, multiplier)); widget.dataset.userFontMultiplier = multiplier; const selection = window.getSelection(); if (selection.toString().length > 0) { document.execCommand('styleWithCSS', false, true); const currentSize = parseFloat(window.getComputedStyle(content).fontSize); const newSize = Math.max(8, Math.min(currentSize + change, 72)); document.execCommand('fontSize', false, '7'); content.querySelectorAll('font[size="7"]').forEach(node => { node.removeAttribute('size'); node.style.fontSize = `${newSize}px`; }); } else autoScaleText(widget); }
+        /// function changeFontSize
+
+function changeFontSize(widget, change) {
+    const content = widget.querySelector('.widget-content');
+    
+    // Обновляем глобальный множитель (для случая без выделения)
+    let multiplier = parseFloat(widget.dataset.userFontMultiplier) || 1;
+    multiplier += change > 0 ? 0.15 : -0.15;
+    multiplier = Math.max(0.4, Math.min(3, multiplier));
+    widget.dataset.userFontMultiplier = multiplier;
+
+    const selection = window.getSelection();
+
+    // ── Случай 1: есть выделение ──
+    if (selection.rangeCount > 0 && selection.toString().length > 0) {
+        const range = selection.getRangeAt(0);
+
+        // Проверяем, что выделение внутри нашего виджета
+        if (!content.contains(range.commonAncestorContainer)) {
+            autoScaleText(widget);
+            return;
+        }
+
+        // Определяем текущий размер выделенного текста
+        const container = range.startContainer.nodeType === 3
+            ? range.startContainer.parentElement
+            : range.startContainer;
+        const currentSize = parseFloat(window.getComputedStyle(container).fontSize) || 14;
+        const newSize = Math.max(8, Math.min(currentSize + change, 72));
+
+        // Оборачиваем выделение в <span> с нужным размером
+        try {
+            const span = document.createElement('span');
+            span.style.fontSize = `${newSize}px`;
+
+            // Если выделение охватывает несколько узлов — используем extractContents
+            const fragment = range.extractContents();
+            span.appendChild(fragment);
+            range.insertNode(span);
+
+            // Восстанавливаем выделение поверх нового span
+            selection.removeAllRanges();
+            const newRange = document.createRange();
+            newRange.selectNodeContents(span);
+            selection.addRange(newRange);
+        } catch (err) {
+            // Если surroundContents падает (выделение через границы блоков) —
+            // просто выходим, ничего не делаем
+            console.warn('Font resize failed:', err);
+        }
+    } 
+    // ── Случай 2: нет выделения — меняем весь текст ──
+    else {
+        autoScaleText(widget);
+    }
+}
+
+
         function applyColor(el, hexColor) {
     const mode = el.dataset.mode || 'pastel';
     const type = el.classList.contains('type-paperclip') ? 'paperclip' : 'square';
