@@ -1,5 +1,5 @@
 // Service Worker for Daily Tracker
-const CACHE_NAME = 'daily-tracker-v3';
+const CACHE_NAME = 'daily-tracker-v4';
 
 const URLS_TO_CACHE = [
   './index.html',
